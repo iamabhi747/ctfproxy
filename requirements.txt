@@ -3,4 +3,6 @@ cryptography
 argparse
 proxy.py
 rich
-
+fastapi
+uvicorn[standard]
+pydantic
