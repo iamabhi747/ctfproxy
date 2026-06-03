@@ -1,0 +1,11 @@
+.venv/
+venv/
+
+__pycache__/
+*.egg-info/
+
+dest/
+build/
+
+*.ctfproxy.cfg
+*.cproxy

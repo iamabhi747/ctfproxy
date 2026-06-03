@@ -1,0 +1,6 @@
+requests
+cryptography
+argparse
+proxy.py
+rich
+
