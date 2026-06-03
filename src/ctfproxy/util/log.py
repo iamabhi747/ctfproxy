@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, auto
 
 class LT (Enum):
     INFO = auto()

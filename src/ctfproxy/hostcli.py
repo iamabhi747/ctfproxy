@@ -14,7 +14,7 @@ def main():
 
     help_p = cmd_subp.add_parser("help", help="Show help information")
 
-    plugin_p = cmd_subp.add_parser("plugin", alias=['p'], help="Plugin related commands")
+    plugin_p = cmd_subp.add_parser("plugin", aliases=['p'], help="Plugin related commands")
     plugin_p.add_argument("--server", "-s", help="Name of the server.")
 
     plugin_subp = plugin_p.add_subparsers(dest="plugincmd", required=True)

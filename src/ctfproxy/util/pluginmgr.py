@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, auto
 
 class PluginType (Enum):
     CLIENT = auto()
@@ -24,7 +24,7 @@ class PluginManager:
         pass
 
     # Decorator
-    def server_method():
+    def server_method(func):
         pass
 
     def request_server(self, request: dict) -> dict:
