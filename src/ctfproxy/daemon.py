@@ -1,14 +1,21 @@
-
-from sys import argv
+from contextlib import asynccontextmanager
+from re import DEBUG
+import sys
+import subprocess
+import time
 
 import uvicorn
-from fastapi import FastAPI, APIRouter, Request, HTTPException
+import requests
+from fastapi import FastAPI, APIRouter, Request 
 from fastapi.responses import Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .plugins import ALL_PLUGINS, PluginType, PluginManager,  filterPlugins
 from .util.pydanticmodels import *
+from .util.config import CPConfig
+from .util.log import LT, log
+from .util.getfreeport import getFreePort
 
 class CPDaemon:
     TYPE = PluginType.DISABLED
@@ -16,6 +23,8 @@ class CPDaemon:
 
     router : APIRouter = None
     ipcapp = None
+    serverPort = 7477
+    config = None
 
     #
     # Cli
@@ -23,34 +32,129 @@ class CPDaemon:
 
     @staticmethod
     def ensure(type: PluginType):
-        pass
+        if type not in [PluginType.HOST, PluginType.CLIENT]:
+            log(LT.WARN, "Invalid Daemon type, only HOST & ClIENT allowed.")
+            return
+
+        if not CPDaemon.isActive(type):
+            CPDaemon.launch(type)
 
     @staticmethod
-    def launch(type: PluginType):
-        pass
+    def launch(type: PluginType) -> bool:
+        tname = ""
+        if type == PluginType.HOST: tname = "host"
+        elif type == PluginType.CLIENT: tname = "client"
+        else: return
+
+        if CPDaemon.isActive(type):
+            log(LT.INFO, "CPDaemon is already running.")
+            return True
+
+        try:
+            cmd = [sys.executable, "-m", "ctfproxy.daemon", tname]
+
+            kwargs = {
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+                "stdin" : subprocess.DEVNULL,
+            }
+
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            else:
+                kwargs["start_new_session"] = True
+                kwargs["cwd"] = "/"
+
+            process = subprocess.Popen(cmd, **kwargs)
+            log(LT.DEBUG, "Daemon Process ID: ", process.pid)
+        except Exception as e:
+            log(LT.ERROR, f"Failed to launch CPDaemon. ({e.__class__.__name__})")
+            return False
+
+        status = CPDaemon.isActive(type, True)
+        if status:
+            log(LT.INFO, f"{tname} daemon is started.")
+        else:
+            log(LT.ERROR, f"{tname} daemon failed to start!")
+        return status
 
     @staticmethod
-    def isActive(type: PluginType):
-        pass
+    def isActive(type: PluginType, waitTillActive = False, tries = 10) -> bool:
+        cfg = CPConfig()
+        sock = None
+        getSockFunc = None
+        if type == PluginType.HOST:
+            getSockFunc = cfg.getHostDaemon
+        elif type == PluginType.CLIENT:
+            getSockFunc = cfg.getClientDaemon
+        else:
+            log(LT.WARN, "Invalid Daemon type, only HOST & ClIENT allowed.")
+            return False
+
+        while tries > 0:
+            sock = getSockFunc()
+            # log(LT.DEBUG, "Daemon Info: ", sock)
+            if  sock is not None and sock.get("active", False):
+                try:
+                    res = requests.get(f"http://127.0.0.1:{sock.get("port", 7477)}/api/checkhealth", timeout=0.2)
+                    if res.status_code == 200 and res.json().get("success", False):
+                        # log(LT.DEBUG, "Daemon is Active!")
+                        return True
+                except Exception as e:
+                    log(LT.DEBUG, "Got error: ", e)
+                    if not waitTillActive: 
+                        return False
+
+            if not waitTillActive:
+                return False
+
+            tries -= 1
+            time.sleep(0.2)
+        return False
 
     #
     # Control Server
     #
 
     def start_server(self):
+        @asynccontextmanager
+        async def server_lifespan(app: FastAPI):
+            self.on_server_start()
+            yield
+            self.on_server_stop()
+
         self.router = APIRouter()
         self.router.add_api_route("/api/checkhealth", self.handle_checkhealth, methods=["GET"], response_model=ResponseData)
         self.router.add_api_route("/api/servermethod", self.handle_servermethod, methods=["POST"], response_model=ResponseData)
         self.router.add_api_route("/api/daemonmethod", self.handle_daemonmethod, methods=["POST"], response_model=ResponseData)
 
-        self.ipcapp = FastAPI(title="Control Server for CTFProxy Daemon")
+        self.ipcapp = FastAPI(title="Control Server for CTFProxy Daemon", lifespan=server_lifespan)
         self.ipcapp.include_router(self.router)
 
         self.ipcapp.add_exception_handler(RequestValidationError, self.handle_input_validation_exception)
         self.ipcapp.add_exception_handler(StarletteHTTPException, self.handle_http_exception)
         self.ipcapp.add_exception_handler(Exception, self.handle_inernal_exception)
 
-        uvicorn.run(self.ipcapp, host='0.0.0.0', port=5555)
+        self.serverPort = getFreePort('127.0.0.1')
+        uvicorn.run(self.ipcapp, host='127.0.0.1', port=self.serverPort)
+
+    def on_server_start(self):
+        log(LT.DEBUG, "Control Server Started at port", self.serverPort)
+        daemonInfo = {
+            "active": True,
+            "port": self.serverPort,
+        }
+        if self.TYPE == PluginType.HOST:
+            self.config.saveHostDaemon(daemonInfo)
+        else:
+            self.config.saveClientDaemon(daemonInfo)
+
+    def on_server_stop(self):
+        log(LT.DEBUG, "Control Server Stoped.")
+        if self.TYPE == PluginType.HOST:
+            self.config.saveHostDaemon(None)
+        else:
+            self.config.saveClientDaemon(None)
 
     async def handle_checkhealth(self, request: Request):
         return ResponseData(success=True, datatype = ResponseType.HEALTH, data={
@@ -106,6 +210,8 @@ class CPDaemon:
         self.TYPE = type
 
     def start(self):
+        self.config = CPConfig()
+
         # Blocking, Should be called at very end of start()
         self.start_server()
 
