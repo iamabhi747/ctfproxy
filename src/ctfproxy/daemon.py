@@ -19,7 +19,7 @@ from .util.getfreeport import getFreePort
 
 class CPDaemon:
     TYPE = PluginType.DISABLED
-    plugins: list[PluginManager] = []
+    plugins: dict[str, PluginManager] = {}
 
     router : APIRouter = None
     ipcapp = None
@@ -112,6 +112,17 @@ class CPDaemon:
             time.sleep(0.2)
         return False
 
+    @staticmethod
+    def getRef(type: PluginType) -> dict:
+        cfg = CPConfig()
+
+        if type == PluginType.HOST:
+            return cfg.getHostDaemon()
+        elif type == PluginType.CLIENT:
+            return cfg.getClientDaemon()
+        else:
+            return {}
+
     #
     # Control Server
     #
@@ -162,7 +173,10 @@ class CPDaemon:
         })
 
     async def handle_servermethod(self, request: ServerMethodRequest):
-        pass
+        if request.plugin in self.plugins:
+            return self.plugins[request.plugin].handle_request(request)
+        else:
+            raise HTTPException(478, detail=f"Requested plugin does not exits. ({request.plugin})")
 
     async def handle_daemonmethod(self, request: DaemonMethodRequest):
         attr = getattr(self, request.method, None)
@@ -221,6 +235,10 @@ class CPDaemon:
 
     def start(self):
         self.config = CPConfig()
+
+        self.plugins = filterPlugins(ALL_PLUGINS, {self.TYPE, PluginType.CLIENT_HOST}, isServer=True)
+        for _, plug in self.plugins.items():
+            plug.init(None, self.plugins)
 
         # Blocking, Should be called at very end of start()
         self.start_server()

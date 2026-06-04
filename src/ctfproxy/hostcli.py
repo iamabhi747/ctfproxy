@@ -19,7 +19,7 @@ def main():
 
     plugin_subp = plugin_p.add_subparsers(dest="plugincmd", required=True)
 
-    hostPlugins = filterPlugins(ALL_PLUGINS, [PluginType.HOST, PluginType.CLIENT_HOST])
+    hostPlugins = filterPlugins(ALL_PLUGINS, {PluginType.HOST, PluginType.CLIENT_HOST}, isServer=False)
     for _, plugin in hostPlugins.items():
         plugin.hostcli_init(cmd_subp, plugin_subp)
 
@@ -31,11 +31,11 @@ def main():
 
     else:
         if args.plugin not in hostPlugins:
-            log(LT.EXIT, f"Something Went Wrong! Tried to call invalid plugin. ({plugincmd})")
+            log(LT.EXIT, f"Something Went Wrong! Tried to call invalid plugin. ({args.plugin})")
             return
         try:
             plugin = hostPlugins[args.plugin]
-            plugin.init(CPDaemon.getRef(), hostPlugins)
+            plugin.init(CPDaemon.getRef(PluginType.HOST), hostPlugins)
             plugin.hostcli(args)
 
         except Exception as e:
