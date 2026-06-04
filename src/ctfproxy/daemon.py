@@ -1,12 +1,12 @@
-from contextlib import asynccontextmanager
-from re import DEBUG
 import sys
-import subprocess
 import time
+import json
+import subprocess
+from contextlib import asynccontextmanager
 
 import uvicorn
 import requests
-from fastapi import FastAPI, APIRouter, Request 
+from fastapi import FastAPI, APIRouter, HTTPException, Request 
 from fastapi.responses import Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -165,7 +165,16 @@ class CPDaemon:
         pass
 
     async def handle_daemonmethod(self, request: DaemonMethodRequest):
-        pass
+        attr = getattr(self, request.method, None)
+        if attr:
+            if getattr(attr, "_is_daemon_method", False):
+                result = attr(**request.kwargs)
+                return ResponseData(success=True, datatype=ResponseType.METHOD_OUTPUT, data = result)
+            else:
+                raise HTTPException(477, detail=f"Requested method is not a daemon method. ({request.method})")
+        else:
+            raise HTTPException(477, detail=f"Requested method does not exists. ({request.method})")
+
 
     async def handle_inernal_exception(self, request: Request, e: Exception):
         return Response(status_code=500, content=ErrorResponse(
@@ -199,8 +208,9 @@ class CPDaemon:
         ).model_dump_json())
 
     # Decorator
-    def daemon_method():
-        pass
+    def daemon_method(func):
+        func._is_daemon_method = True
+        return func
 
     #
     # CPDaemon
@@ -215,6 +225,7 @@ class CPDaemon:
         # Blocking, Should be called at very end of start()
         self.start_server()
 
+    @daemon_method
     def stop(self):
         pass
 

@@ -6,12 +6,10 @@ from pydantic import BaseModel, Field
 class ServerMethodRequest (BaseModel):
     plugin: str
     method: str
-    args: list[Any]
     kwargs: dict[str, Any]
 
 class DaemonMethodRequest (BaseModel):
     method: str
-    args: list[Any]
     kwargs: dict[str, Any]
 
 
