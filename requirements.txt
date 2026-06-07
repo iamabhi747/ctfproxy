@@ -6,3 +6,5 @@ rich
 fastapi
 uvicorn[standard]
 pydantic
+InquirerPy
+pycryptodome
