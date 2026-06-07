@@ -1,5 +1,6 @@
 import inspect
 from enum import Enum, auto
+from typing import Any
 
 import requests
 from argparse import _SubParsersAction, ArgumentParser
@@ -11,6 +12,12 @@ class PluginType (Enum):
     HOST = auto()
     CLIENT_HOST = auto()
     DISABLED = auto()
+
+class InitState (Enum):
+    DONE = auto()
+    NOT_STARTED = auto()
+    FAILED = auto()
+    DEPEND_FAILED = auto()
 
 # Decorator
 def server_method(func):
@@ -36,11 +43,21 @@ class PluginManager:
     NAME = "NONE"
     SHORTNAME = "NAN"
     TYPE = PluginType.DISABLED
+    PRIORITY = 100
+    DD : dict[PluginManager] = dict()
+    dependencies: set[str] = set()
 
-    initDone = False
-    dependencies = dict()
+    _IS : InitState = InitState.NOT_STARTED # General Init State
+    _COS : InitState = InitState.NOT_STARTED # Config Init State
+    _CLS : InitState = InitState.NOT_STARTED # Cli Init State
     serverDetails = dict()
     isInServer = False
+    error = None
+
+    serverConfig = None
+    _serverConfigType = None
+    userConfig = None
+    _userConfigType = None
 
     #
     # "Private/Internal" methods
@@ -49,7 +66,6 @@ class PluginManager:
     def __init__(self, isServer: bool):
         self.isInServer = isServer
 
-    
     def request_server(self, request: ServerMethodRequest) -> dict:
         try:
             res = requests.post(f"http://127.0.0.1:{self.serverDetails.get("port", 7477)}/api/servermethod",
@@ -83,18 +99,24 @@ class PluginManager:
         else:
             raise HTTPException(477, detail=f"Requested method does not exists. ({self.NAME}::{request.method})")
 
-
-    def init_dependencies(self, daemonRef, plugins):
-        pass
-
     #
     # "Plugin" methods
     #
 
-    def init(self, daemonRef, plugins):
-        if self.initDone: return
+    def init(self, daemonRef):
+        if self._IS != InitState.NOT_STARTED: return
         if not self.isInServer:
             self.serverDetails = daemonRef
+        else:
+            if self._serverConfigType is not None:
+                self.serverConfig = self._serverConfigType.model_validate(daemonRef.get("serverConfig", {}))
+            else:
+                self.serverConfig = daemonRef.get("serverConfig", {})
+
+            if self._userConfigType is not None:
+                self.userConfig = self._userConfigType.model_validate(daemonRef.get("userConfig", {}))
+            else:
+                self.userConfig = daemonRef.get("userConfig", {})
 
     def hostcli(self, args: dict):
         pass
@@ -102,10 +124,16 @@ class PluginManager:
     def hostcli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
         pass
 
+    def hostconfig_init(self, config: dict[str, dict[str, Any]]):
+        pass
+
     def clientcli(self, args: dict):
         pass
 
     def clientcli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
+        pass
+
+    def clientconfig_init(self, config: dict[str, dict[str, Any]]):
         pass
 
     #

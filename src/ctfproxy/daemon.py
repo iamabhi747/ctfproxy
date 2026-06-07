@@ -11,7 +11,7 @@ from fastapi.responses import Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .plugins import ALL_PLUGINS, PluginType, PluginManager,  filterPlugins
+from .plugins import ALL_PLUGINS, PluginType, InitState, PluginManager,  filterPlugins
 from .util.pydanticmodels import *
 from .util.config import CPConfig
 from .util.log import LT, log
@@ -233,12 +233,38 @@ class CPDaemon:
     def __init__(self, type: PluginType = PluginType.DISABLED):
         self.TYPE = type
 
+    def start_plugins(self):
+        self.plugins = filterPlugins(ALL_PLUGINS, [self.TYPE, PluginType.CLIENT_HOST], isServer=True)
+
+        if self.TYPE == PluginType.HOST:
+            userConfig = self.config.getHostConfig()
+            serverConfig = self.config.getDefaultServerConfig()
+        else:
+            userConfig = self.config.getClientConfig()
+            serverConfig = {}
+
+        doneSet = set()
+        for _, plugin in self.plugins.items():
+            if not plugin.dependencies.issubset(doneSet):
+                plugin._IS = InitState.DEPEND_FAILED
+            elif plugin._IS == InitState.NOT_STARTED:
+                for dependName in plugin.dependencies:
+                    plugin.DD[dependName] = self.plugins[dependName]
+
+                try:
+                    plugin.init({
+                        "serverConfig": serverConfig.get(plugin.NAME, {}),
+                        "userConfig": userConfig.get(plugin.NAME, {})
+                    })
+                    plugin._IS = InitState.DONE
+                    doneSet.add(plugin.NAME)
+                except Exception as e:
+                    plugin._IS = InitState.FAILED
+                    plugin.error = f"{e}"
+
     def start(self):
         self.config = CPConfig()
-
-        self.plugins = filterPlugins(ALL_PLUGINS, {self.TYPE, PluginType.CLIENT_HOST}, isServer=True)
-        for _, plug in self.plugins.items():
-            plug.init(None, self.plugins)
+        self.start_plugins()
 
         # Blocking, Should be called at very end of start()
         self.start_server()

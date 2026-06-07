@@ -16,6 +16,8 @@ def log(type, *args, **kwargs):
     printfunc = console.print
     if type == LT.EXIT or type == LT.ERROR:
         console.print(r"\[[magenta bold]ERROR[/magenta bold]] [red]", *args, style="red", **kwargs)
+        if type == LT.EXIT:
+            exit(1)
     elif type == LT.WARN:
         console.print(r"\[[magenta bold]WARN[/magenta bold]] [yellow]", *args, style="yellow", **kwargs)
     elif type == LT.SUCCESS:
