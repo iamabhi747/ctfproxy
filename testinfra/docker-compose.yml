@@ -1,0 +1,209 @@
+
+networks:
+  internet_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24
+  nat_1:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.1.0/24
+
+  nat_2:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.2.0/24
+
+  nat_3:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.3.0/24
+
+
+
+services:
+  # Server
+  server:
+    image: testinfra-server
+    build:
+      context: ./server/
+      additional_contexts:
+        - shared_req=../
+    hostname: server0
+    networks:
+      internet_net:
+        ipv4_address: 10.0.0.5
+    environment:
+      - HEADSCALE_DISABLE_CHECK_UPDATES=true
+    volumes:
+      - ./server/headscale.config.yaml:/etc/headscale/config.yaml
+      - ./server/certs/deathwing.testnet.crt:/etc/certs/deathwing.testnet.crt:ro
+      - ./server/certs/deathwing.testnet.key:/etc/certs/deathwing.testnet.key:ro
+      - ../pyproject.toml:/app/pyproject.toml
+      - ../src/ctfproxy:/app/src/ctfproxy:ro
+      - ./authkeys:/var/lib/authkeys
+
+  # Routers
+  router_1:
+    image: testinfra-router
+    build:
+      context: ./router/
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    environment:
+      - SUBNET=192.168.1.0/24
+    networks:
+      internet_net:
+        ipv4_address: 10.0.0.101
+      nat_1:
+        ipv4_address: 192.168.1.254
+
+  router_2:
+    image: testinfra-router
+    depends_on:
+      - router_1
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    environment:
+      - SUBNET=192.168.2.0/24
+    networks:
+      internet_net:
+        ipv4_address: 10.0.0.102
+      nat_2:
+        ipv4_address: 192.168.2.254
+
+  router_3:
+    image: testinfra-router
+    depends_on:
+      - router_1
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    environment:
+      - SUBNET=192.168.3.0/24
+    networks:
+      internet_net:
+        ipv4_address: 10.0.0.103
+      nat_3:
+        ipv4_address: 192.168.3.254
+
+
+  # Nodes
+  node_nat1_1:
+    image: testinfra-node
+    build:
+      context: ./client/
+      additional_contexts:
+        - shared_req=../
+    hostname: nat11
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      nat_1:
+        ipv4_address: 192.168.1.11
+    extra_hosts:
+      - "deathwing.testnet:10.0.0.5"
+    volumes:
+      - ./client/certs/localCA.pem:/usr/local/share/ca-certificates/localCA.crt:ro
+      - ../pyproject.toml:/app/pyproject.toml
+      - ../src/ctfproxy:/app/src/ctfproxy:ro
+    environment:
+      - TS_NO_LOGS_NO_SUPPORT=true
+    command: >
+      sh -c "update-ca-certificates && 
+             ip route replace default via 192.168.1.254 && 
+             pip install -e /app &&
+             tailscaled"
+
+  node_nat1_2:
+    image: testinfra-node
+    depends_on:
+      - node_nat1_1
+    hostname: nat12
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      nat_1:
+        ipv4_address: 192.168.1.12
+    extra_hosts:
+      - "deathwing.testnet:10.0.0.5"
+    volumes:
+      - ./client/certs/localCA.pem:/usr/local/share/ca-certificates/localCA.crt:ro
+      - ../pyproject.toml:/app/pyproject.toml
+      - ../src/ctfproxy:/app/src/ctfproxy:ro
+    environment:
+      - TS_NO_LOGS_NO_SUPPORT=true
+    command: >
+      sh -c "update-ca-certificates && 
+             ip route replace default via 192.168.1.254 && 
+             pip install -e /app &&
+             tailscaled"
+
+  node_nat2_1:
+    image: testinfra-node
+    depends_on:
+      - node_nat1_1
+    hostname: nat21
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      nat_2:
+        ipv4_address: 192.168.2.11
+    extra_hosts:
+      - "deathwing.testnet:10.0.0.5"
+    volumes:
+      - ./client/certs/localCA.pem:/usr/local/share/ca-certificates/localCA.crt:ro
+      - ../pyproject.toml:/app/pyproject.toml
+      - ../src/ctfproxy:/app/src/ctfproxy:ro
+    environment:
+      - TS_NO_LOGS_NO_SUPPORT=true
+    command: >
+      sh -c "update-ca-certificates && 
+             ip route replace default via 192.168.2.254 && 
+             pip install -e /app &&
+             tailscaled"
+
+  node_nat3_1:
+    image: testinfra-node
+    depends_on:
+      - node_nat1_1
+    hostname: nat31
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      nat_3:
+        ipv4_address: 192.168.3.11
+    extra_hosts:
+      - "deathwing.testnet:10.0.0.5"
+    volumes:
+      - ./client/certs/localCA.pem:/usr/local/share/ca-certificates/localCA.crt:ro
+      - ../pyproject.toml:/app/pyproject.toml
+      - ../src/ctfproxy:/app/src/ctfproxy:ro
+    environment:
+      - TS_NO_LOGS_NO_SUPPORT=true
+    command: >
+      sh -c "update-ca-certificates && 
+             ip route replace default via 192.168.3.254 && 
+             pip install -e /app &&
+             tailscaled"

@@ -1,0 +1,97 @@
+# --- Core Server Settings ---
+# The URL your nodes will use to connect. 
+# Matches the DNS faking we set up in extra_hosts.
+server_url: https://deathwing.testnet:4433
+
+# Bind to all interfaces on port 4433 inside the container
+listen_addr: 0.0.0.0:4433
+
+# Internal metrics and gRPC interfaces (Local to the container)
+metrics_listen_addr: 127.0.0.1:9090
+grpc_listen_addr: ""
+grpc_allow_insecure: false
+
+# --- Key and Database Paths ---
+# These map to the /var/lib/headscale directory we created 
+# in the Ubuntu-based Dockerfile.
+private_key_path: /var/lib/headscale/private.key
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+database:
+  type: sqlite3
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+
+# --- IP Address Allocation ---
+# Standard Tailscale CGNAT ranges. Headscale will assign IPs 
+# from these pools to your node_nat containers.
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+
+# --- TLS / HTTPS Configuration ---
+# Let's Encrypt is explicitly disabled.
+tls_letsencrypt_hostname: ""
+tls_client_auth_mode: relaxed
+
+# Paths match the read-only volumes mounted in docker-compose.yml
+tls_cert_path: "/etc/certs/deathwing.testnet.crt"
+tls_key_path: "/etc/certs/deathwing.testnet.key"
+
+# --- DERP (NAT Traversal & Relaying) ---
+derp:
+  server:
+    # Enable the embedded DERP server for fallback routing
+    enabled: true
+    region_id: 999
+    region_code: "headscale"
+    region_name: "Local Headscale Test DERP"
+    
+    # Matches the STUN port exposed in the Dockerfile
+    stun_listen_addr: "0.0.0.0:3478"
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    
+    # Defines the connection parameters for the Tailscale clients
+    ipv4: 10.0.0.5 # The static IP of the Headscale server on the internet_net
+    ipv6: ""
+
+  # CRITICAL FOR TESTING: 
+  # Leave urls and paths empty. This prevents Headscale from downloading 
+  # Tailscale's default public DERP maps, forcing all fallback traffic 
+  # strictly through your local containerized environment.
+  urls: []
+  paths: []
+
+  # How often nodes check the DERP map
+  auto_update_enabled: true
+  update_frequency: 24h
+
+# --- DNS / MagicDNS Settings ---
+dns:
+  magic_dns: true
+  base_domain: cpinternal.net
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 8.8.8.8
+    split: {}
+  search_domains: []
+  override_local_dns: true
+
+# --- System & Access Control ---
+# Automatically approve IP forwarding for subnet routers (useful if you 
+# expand the testbed later to include Tailscale subnet routers).
+auto_approvers:
+  routes:
+    # Automatically approve all routes published by any node
+    - 0.0.0.0/0
+    - ::/0
+  exit_nodes:
+    - "*"
+
+# --- Misc Settings ---
+ephemeral_node_inactivity_timeout: 30m
+node_update_check_interval: 10s
+logtail:
+  enabled: false # Disabled to keep container logs clean and local
