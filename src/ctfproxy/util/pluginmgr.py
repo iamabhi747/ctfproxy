@@ -3,14 +3,14 @@ from enum import Enum, auto
 from typing import Any
 
 import requests
+from fastapi import HTTPException
 from argparse import _SubParsersAction, ArgumentParser
 
-from .pydanticmodels import ResponseData, ResponseType, ServerMethodRequest, ErrorResponse, ErrorType
+from .pydanticmodels import ResponseData, ResponseType, MethodRequest, ErrorResponse, ErrorType
 
 class PluginType (Enum):
     CLIENT = auto()
     HOST = auto()
-    CLIENT_HOST = auto()
     DISABLED = auto()
 
 class InitState (Enum):
@@ -20,7 +20,7 @@ class InitState (Enum):
     DEPEND_FAILED = auto()
 
 # Decorator
-def server_method(func):
+def daemon_method(func):
     def wrapper(self, *args, **kwargs):
         if self.isInServer:
             return func(self, *args, **kwargs)
@@ -30,13 +30,13 @@ def server_method(func):
             allkwargs = sig.bind(self, *args, **kwargs).arguments
             allkwargs.pop("self", None)
 
-            return self.request_server(ServerMethodRequest(
+            return self.request_daemon(MethodRequest(
                 plugin= self.NAME,
                 method= func.__name__,
                 kwargs= allkwargs
             ))
 
-    wrapper._is_server_method = True
+    wrapper._is_daemon_method = True
     return wrapper
 
 class PluginManager:
@@ -44,7 +44,7 @@ class PluginManager:
     SHORTNAME = "NAN"
     TYPE = PluginType.DISABLED
     PRIORITY = 100
-    DD : dict[PluginManager] = dict()
+    DD: dict[str, "PluginManager"] = dict()
     dependencies: set[str] = set()
 
     _IS : InitState = InitState.NOT_STARTED # General Init State
@@ -66,13 +66,13 @@ class PluginManager:
     def __init__(self, isServer: bool):
         self.isInServer = isServer
 
-    def request_server(self, request: ServerMethodRequest) -> dict:
+    def request_daemon(self, request: MethodRequest) -> dict:
         try:
-            res = requests.post(f"http://127.0.0.1:{self.serverDetails.get("port", 7477)}/api/servermethod",
-            data = request.model_dump_json(),
-            headers = {
-                "Content-Type": "application/json"
-            })
+            res = requests.post(
+                f"http://127.0.0.1:{self.serverDetails.get('port', 7477)}/api/daemonmethod",
+                data=request.model_dump_json(),
+                headers={"Content-Type": "application/json"},
+            )
 
             if res.status_code == 200:
                 rd = ResponseData.model_validate(res.json())
@@ -85,17 +85,19 @@ class PluginManager:
                     raise AttributeError("Invalid request, values do not follow schema. " + rd.errmessage)
                 else:
                     raise RuntimeError("Failed to execute method. " + rd.errmessage)
-        except:
+        except Exception as e:
+            if isinstance(e, ConnectionError):
+                raise
             raise ConnectionError(747, "Failed to connect.")
 
-    def handle_request(self, request: ServerMethodRequest) -> ResponseData:
+    def handle_request(self, request: MethodRequest) -> ResponseData:
         attr = getattr(self, request.method, None)
         if attr:
-            if getattr(attr, "_is_server_method", False):
+            if getattr(attr, "_is_daemon_method", False):
                 result = attr(**request.kwargs)
                 return ResponseData(success=True, datatype=ResponseType.METHOD_OUTPUT, data = result)
             else:
-                raise HTTPException(477, detail=f"Requested method is not a server method. ({self.NAME}::{request.method})")
+                raise HTTPException(477, detail=f"Requested method is not a daemon method. ({self.NAME}::{request.method})")
         else:
             raise HTTPException(477, detail=f"Requested method does not exists. ({self.NAME}::{request.method})")
 
@@ -118,46 +120,45 @@ class PluginManager:
             else:
                 self.userConfig = daemonRef.get("userConfig", {})
 
-    def hostcli(self, args: dict):
+    def cli(self, args: dict):
         pass
 
-    def hostcli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
+    def cli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
         pass
 
-    def hostconfig_init(self, config: dict[str, dict[str, Any]]):
-        pass
-
-    def clientcli(self, args: dict):
-        pass
-
-    def clientcli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
-        pass
-
-    def clientconfig_init(self, config: dict[str, dict[str, Any]]):
+    def config_init(self, config: dict[str, dict[str, Any]]):
         pass
 
     #
     # "Server" methods
     #
 
-    @server_method
+    @daemon_method
     def getStatus(self):
         pass
 
-    @server_method
+    @daemon_method
     def start(self):
         pass
 
-    @server_method
+    @daemon_method
     def stop(self):
         pass
 
-    @server_method
+    @daemon_method
     def connect(self):
         pass
 
-    @server_method
+    @daemon_method
     def disconnect(self):
         pass
+
+
+class ClientPluginHandler(PluginManager):
+    TYPE = PluginType.CLIENT
+
+
+class HostPluginHandler(PluginManager):
+    TYPE = PluginType.HOST
 
 

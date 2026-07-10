@@ -3,12 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-class ServerMethodRequest (BaseModel):
-    plugin: str
-    method: str
-    kwargs: dict[str, Any]
-
-class DaemonMethodRequest (BaseModel):
+class MethodRequest (BaseModel):
+    plugin: str | None = None
     method: str
     kwargs: dict[str, Any]
 

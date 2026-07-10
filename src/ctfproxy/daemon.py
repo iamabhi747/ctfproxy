@@ -2,6 +2,7 @@ import sys
 import time
 import json
 import subprocess
+import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -14,16 +15,18 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .plugins import ALL_PLUGINS, PluginType, InitState, PluginManager,  filterPlugins
 from .util.pydanticmodels import *
 from .util.config import CPConfig
-from .util.log import LT, log
+from .util.log import initLogging
 from .util.getfreeport import getFreePort
+
+logger = logging.getLogger(__name__)
 
 class CPDaemon:
     TYPE = PluginType.DISABLED
     plugins: dict[str, PluginManager] = {}
 
-    router : APIRouter = None
-    ipcapp = None
-    serverPort = 7477
+    dcsRouter : APIRouter = None
+    dcsApp = None
+    dcsPort = 7479
     config = None
 
     #
@@ -33,7 +36,7 @@ class CPDaemon:
     @staticmethod
     def ensure(type: PluginType):
         if type not in [PluginType.HOST, PluginType.CLIENT]:
-            log(LT.WARN, "Invalid Daemon type, only HOST & ClIENT allowed.")
+            logger.warning("Invalid Daemon type, only HOST & ClIENT allowed.")
             return
 
         if not CPDaemon.isActive(type):
@@ -47,7 +50,7 @@ class CPDaemon:
         else: return
 
         if CPDaemon.isActive(type):
-            log(LT.INFO, "CPDaemon is already running.")
+            logger.info("CPDaemon is already running.")
             return True
 
         try:
@@ -66,16 +69,16 @@ class CPDaemon:
                 kwargs["cwd"] = "/"
 
             process = subprocess.Popen(cmd, **kwargs)
-            log(LT.DEBUG, "Daemon Process ID: ", process.pid)
+            logger.debug("Daemon Process ID: %s", process.pid)
         except Exception as e:
-            log(LT.ERROR, f"Failed to launch CPDaemon. ({e.__class__.__name__})")
+            logger.error("Failed to launch CPDaemon.", exc_info=e)
             return False
 
         status = CPDaemon.isActive(type, True)
         if status:
-            log(LT.INFO, f"{tname} daemon is started.")
+            logger.info("%s daemon is started.", tname)
         else:
-            log(LT.ERROR, f"{tname} daemon failed to start!")
+            logger.error("%s daemon failed to start!", tname)
         return status
 
     @staticmethod
@@ -88,20 +91,20 @@ class CPDaemon:
         elif type == PluginType.CLIENT:
             getSockFunc = cfg.getClientDaemon
         else:
-            log(LT.WARN, "Invalid Daemon type, only HOST & ClIENT allowed.")
+            logger.warning("Invalid Daemon type, only HOST & ClIENT allowed.")
             return False
 
         while tries > 0:
             sock = getSockFunc()
-            # log(LT.DEBUG, "Daemon Info: ", sock)
+            # logger.debug("Daemon Info: %s", sock)
             if  sock is not None and sock.get("active", False):
                 try:
-                    res = requests.get(f"http://127.0.0.1:{sock.get("port", 7477)}/api/checkhealth", timeout=0.2)
+                    res = requests.get(f"http://127.0.0.1:{sock.get('port', 7477)}/api/checkhealth", timeout=0.2)
                     if res.status_code == 200 and res.json().get("success", False):
-                        # log(LT.DEBUG, "Daemon is Active!")
+                        # logger.debug("Daemon is Active!")
                         return True
                 except Exception as e:
-                    log(LT.DEBUG, "Got error: ", e)
+                    logger.debug("Got error:", exc_info=e)
                     if not waitTillActive: 
                         return False
 
@@ -124,61 +127,68 @@ class CPDaemon:
             return {}
 
     #
-    # Control Server
+    # Daemon Control Server
     #
 
-    def start_server(self):
+    def get_dcs(self):
         @asynccontextmanager
-        async def server_lifespan(app: FastAPI):
-            self.on_server_start()
+        async def dcs_lifespan(app: FastAPI):
+            self.on_dcs_start()
             yield
-            self.on_server_stop()
+            self.on_dcs_stop()
 
-        self.router = APIRouter()
-        self.router.add_api_route("/api/checkhealth", self.handle_checkhealth, methods=["GET"], response_model=ResponseData)
-        self.router.add_api_route("/api/servermethod", self.handle_servermethod, methods=["POST"], response_model=ResponseData)
-        self.router.add_api_route("/api/daemonmethod", self.handle_daemonmethod, methods=["POST"], response_model=ResponseData)
+        self.dcsRouter = APIRouter()
+        self.dcsRouter.add_api_route("/api/checkhealth", self.handle_checkhealth, methods=["GET"], response_model=ResponseData)
+        self.dcsRouter.add_api_route("/api/daemonmethod", self.handle_daemonmethod, methods=["POST"], response_model=ResponseData)
 
-        self.ipcapp = FastAPI(title="Control Server for CTFProxy Daemon", lifespan=server_lifespan)
-        self.ipcapp.include_router(self.router)
+        self.dcsApp = FastAPI(title="Daemon Control Server for CTFProxy", lifespan=dcs_lifespan)
+        self.dcsApp.include_router(self.dcsRouter)
 
-        self.ipcapp.add_exception_handler(RequestValidationError, self.handle_input_validation_exception)
-        self.ipcapp.add_exception_handler(StarletteHTTPException, self.handle_http_exception)
-        self.ipcapp.add_exception_handler(Exception, self.handle_inernal_exception)
+        self.dcsApp.add_exception_handler(RequestValidationError, self.handle_input_validation_exception)
+        self.dcsApp.add_exception_handler(StarletteHTTPException, self.handle_http_exception)
+        self.dcsApp.add_exception_handler(Exception, self.handle_inernal_exception)
 
-        self.serverPort = getFreePort('127.0.0.1')
-        uvicorn.run(self.ipcapp, host='127.0.0.1', port=self.serverPort)
+        self.dcsPort = getFreePort('127.0.0.1')
+        config_dcs = uvicorn.Config(app=self.dcsApp, host='127.0.0.1', port=self.dcsPort)
+        server_dcs = uvicorn.Server(config_dcs)
+        # uvicorn.run(self.dcsApp, host='127.0.0.1', port=self.dcsPort)
 
-    def on_server_start(self):
-        log(LT.DEBUG, "Control Server Started at port", self.serverPort)
+        return server_dcs
+
+    def on_dcs_start(self):
+        logger.debug("Daemon Control Server Started at port %s", self.dcsPort)
         daemonInfo = {
             "active": True,
-            "port": self.serverPort,
+            "port": self.dcsPort,
         }
         if self.TYPE == PluginType.HOST:
             self.config.saveHostDaemon(daemonInfo)
         else:
             self.config.saveClientDaemon(daemonInfo)
 
-    def on_server_stop(self):
-        log(LT.DEBUG, "Control Server Stoped.")
+    def on_dcs_stop(self):
+        logger.debug("Daemon Control Server Stopped.")
         if self.TYPE == PluginType.HOST:
             self.config.saveHostDaemon(None)
         else:
             self.config.saveClientDaemon(None)
+
+    #
+    # Server Request Handlers
+    #
 
     async def handle_checkhealth(self, request: Request):
         return ResponseData(success=True, datatype = ResponseType.HEALTH, data={
            "status": "OK", 
         })
 
-    async def handle_servermethod(self, request: ServerMethodRequest):
-        if request.plugin in self.plugins:
-            return self.plugins[request.plugin].handle_request(request)
-        else:
-            raise HTTPException(478, detail=f"Requested plugin does not exits. ({request.plugin})")
+    async def handle_daemonmethod(self, request: MethodRequest):
+        if request.plugin is not None:
+            if request.plugin in self.plugins:
+                return self.plugins[request.plugin].handle_request(request)
+            else:
+                raise HTTPException(478, detail=f"Requested plugin does not exits. ({request.plugin})")
 
-    async def handle_daemonmethod(self, request: DaemonMethodRequest):
         attr = getattr(self, request.method, None)
         if attr:
             if getattr(attr, "_is_daemon_method", False):
@@ -234,14 +244,14 @@ class CPDaemon:
         self.TYPE = type
 
     def start_plugins(self):
-        self.plugins = filterPlugins(ALL_PLUGINS, [self.TYPE, PluginType.CLIENT_HOST], isServer=True)
+        self.plugins = filterPlugins(ALL_PLUGINS, {self.TYPE}, isServer=True)
 
         if self.TYPE == PluginType.HOST:
             userConfig = self.config.getHostConfig()
-            serverConfig = self.config.getDefaultServerConfig()
+            serverConfig = {}
         else:
             userConfig = self.config.getClientConfig()
-            serverConfig = {}
+            serverConfig = self.config.getDefaultServerConfig()
 
         doneSet = set()
         for _, plugin in self.plugins.items():
@@ -256,6 +266,7 @@ class CPDaemon:
                         "serverConfig": serverConfig.get(plugin.NAME, {}),
                         "userConfig": userConfig.get(plugin.NAME, {})
                     })
+                    plugin.connect()
                     plugin._IS = InitState.DONE
                     doneSet.add(plugin.NAME)
                 except Exception as e:
@@ -266,8 +277,17 @@ class CPDaemon:
         self.config = CPConfig()
         self.start_plugins()
 
-        # Blocking, Should be called at very end of start()
-        self.start_server()
+        server_dcs = self.get_dcs()
+        
+        if self.TYPE == PluginType.HOST:
+            server_dcs.run()
+        
+        elif self.TYPE == PluginType.CLIENT:
+            server_dcs.run()
+        
+        else:
+            logger.critical("Type is DISABLED. No server started.")
+            sys.exit(1)
 
     @daemon_method
     def stop(self):
@@ -275,6 +295,8 @@ class CPDaemon:
 
 if __name__ == '__main__':
     import sys
+    from ctfproxy.util.log import initLogging
+    initLogging(level=logging.DEBUG)
 
     if len(sys.argv) != 2 or sys.argv[1] not in ["host", "client"]:
         print("CPDaemon requires type to be specified as argument. (host / client)")

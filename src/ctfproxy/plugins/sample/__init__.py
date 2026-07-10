@@ -1,0 +1,1 @@
+from .pluginmgr import SamplePluginManager

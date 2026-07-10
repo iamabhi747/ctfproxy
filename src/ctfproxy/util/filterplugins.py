@@ -1,7 +1,10 @@
 import heapq
+import logging
+import sys
 
 from .pluginmgr import PluginType, PluginManager
-from ..util.log import log, LT
+
+logger = logging.getLogger(__name__)
 
 def filterPlugins(plugins: list[type[PluginManager]], types: set[PluginType], isServer : bool = False) -> dict[str, PluginManager]:
     filteredPlugins = dict()
@@ -22,8 +25,8 @@ def filterPlugins(plugins: list[type[PluginManager]], types: set[PluginType], is
 
         for dep in plugin.dependencies:
             if dep not in adjList:
-                log(LT.EXIT, f"Missing dependency: '{dep}' required by '{plugin.NAME}'")
-                return {}
+                logger.critical(f"Missing dependency: '{dep}' required by '{plugin.NAME}'")
+                sys.exit(1)
             adjList[dep].append(plugin.NAME)
 
     zeroDegreeHeap = []
@@ -42,7 +45,7 @@ def filterPlugins(plugins: list[type[PluginManager]], types: set[PluginType], is
                 heapq.heappush(zeroDegreeHeap, (pluginMap[dependent].PRIORITY, dependent))
 
     if len(pluginMap) != len(filteredPlugins):
-        log(LT.EXIT, "Circular dependency detected. Cannot sort topologically.")
-        return {}
+        logger.critical("Circular dependency detected. Cannot sort topologically.")
+        sys.exit(1)
 
     return filteredPlugins

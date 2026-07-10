@@ -1,11 +1,14 @@
 from urllib3 import util
+from typing import Any
 from pydantic import BaseModel
 from InquirerPy import inquirer
 from InquirerPy.validator import NumberValidator
 from argparse import ArgumentParser, _SubParsersAction
 
-from ...util.pluginmgr import PluginType, PluginManager, server_method
-from ...util.log import log, LT, console
+import logging
+from ctfproxy import ClientPluginHandler, console, daemon_method
+
+logger = logging.getLogger(__name__)
 
 class SampleConfig (BaseModel):
     isDefined: bool = False
@@ -13,47 +16,46 @@ class SampleConfig (BaseModel):
     salary: int = 0
     company: str = ""
 
-class SamplePluginManager (PluginManager):
+class SamplePluginManager (ClientPluginHandler):
     NAME = "SamplePluginManager"
     SHORTNAME = "sample"
-    TYPE = PluginType.CLIENT_HOST
 
     userConfig: SampleConfig = SampleConfig()
     _userConfigType = SampleConfig
 
-    @server_method
+    @daemon_method
     def t1(self):
-        log(LT.DEBUG, "Server Method t1 called.")
+        logger.debug("Server Method t1 called.")
         return [10, 9, 10]
 
-    @server_method
+    @daemon_method
     def t2(self) -> str:
-        log(LT.DEBUG, f"Sending name in config. ({self.userConfig.name})")
+        logger.debug("Sending name in config. (%s)", self.userConfig.name)
         return self.userConfig.name
 
 
-    def clientcli(self, args: dict):
+    def cli(self, args: dict):
         subcmd = args.subcmd
         if subcmd == "t1":
             arr = self.t1()
-            log(LT.DEBUG, "Result of server method: ", arr)
+            logger.debug("Result of server method: %s", arr)
 
         elif subcmd == "t2":
             name = self.t2()
-            log(LT.DEBUG, "Got Name as:", name)
+            logger.debug("Got Name as: %s", name)
 
         else:
-            log(LT.WARN, f"Invalid/Not Implimented Sub-command in sample. ({subcmd})")
+            logger.warning("Invalid/Not Implimented Sub-command in sample. (%s)", subcmd)
             return
 
-    def clientcli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
+    def cli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
         sample_p = cmd_subp.add_parser("sample", help="Sample command for testing.")
         sample_p.set_defaults(plugin=self.NAME)
 
         sample_p.add_argument("subcmd", help="Sample subtest.", choices=["t1", "t2"])
         sample_p.add_argument("--opt1", "-a", help="Sample Option 1 / a", action="store_true")
 
-    def clientconfig_init(self, config: dict[str, dict[str, Any]]):
+    def config_init(self, config: dict[str, dict[str, Any]]):
         sampleConfig = SampleConfig.model_validate(config.get(self.NAME, dict()))
 
         console.print("[cyan bold underline]( Sample Config )[/]")
