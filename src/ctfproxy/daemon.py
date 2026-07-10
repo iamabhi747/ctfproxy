@@ -21,9 +21,9 @@ class CPDaemon:
     TYPE = PluginType.DISABLED
     plugins: dict[str, PluginManager] = {}
 
-    router : APIRouter = None
-    ipcapp = None
-    serverPort = 7477
+    dcsRouter : APIRouter = None
+    dcsApp = None
+    dcsPort = 7479
     config = None
 
     #
@@ -124,54 +124,62 @@ class CPDaemon:
             return {}
 
     #
-    # Control Server
+    # Daemon Control Server
     #
 
-    def start_server(self):
+    def get_dcs(self):
         @asynccontextmanager
-        async def server_lifespan(app: FastAPI):
-            self.on_server_start()
+        async def dcs_lifespan(app: FastAPI):
+            self.on_dcs_start()
             yield
-            self.on_server_stop()
+            self.on_dcs_stop()
 
-        self.router = APIRouter()
-        self.router.add_api_route("/api/checkhealth", self.handle_checkhealth, methods=["GET"], response_model=ResponseData)
-        self.router.add_api_route("/api/daemonmethod", self.handle_daemonmethod, methods=["POST"], response_model=ResponseData)
+        self.dcsRouter = APIRouter()
+        self.dcsRouter.add_api_route("/api/checkhealth", self.handle_checkhealth, methods=["GET"], response_model=ResponseData)
+        self.dcsRouter.add_api_route("/api/daemonmethod", self.handle_daemonmethod, methods=["POST"], response_model=ResponseData)
 
-        self.ipcapp = FastAPI(title="Control Server for CTFProxy Daemon", lifespan=server_lifespan)
-        self.ipcapp.include_router(self.router)
+        self.dcsApp = FastAPI(title="Daemon Control Server for CTFProxy", lifespan=dcs_lifespan)
+        self.dcsApp.include_router(self.dcsRouter)
 
-        self.ipcapp.add_exception_handler(RequestValidationError, self.handle_input_validation_exception)
-        self.ipcapp.add_exception_handler(StarletteHTTPException, self.handle_http_exception)
-        self.ipcapp.add_exception_handler(Exception, self.handle_inernal_exception)
+        self.dcsApp.add_exception_handler(RequestValidationError, self.handle_input_validation_exception)
+        self.dcsApp.add_exception_handler(StarletteHTTPException, self.handle_http_exception)
+        self.dcsApp.add_exception_handler(Exception, self.handle_inernal_exception)
 
-        self.serverPort = getFreePort('127.0.0.1')
-        uvicorn.run(self.ipcapp, host='127.0.0.1', port=self.serverPort)
+        self.dcsPort = getFreePort('127.0.0.1')
+        config_dcs = uvicorn.Config(app=self.dcsApp, host='127.0.0.1', port=self.dcsPort)
+        server_dcs = uvicorn.Server(config_dcs)
+        # uvicorn.run(self.dcsApp, host='127.0.0.1', port=self.dcsPort)
 
-    def on_server_start(self):
-        log(LT.DEBUG, "Control Server Started at port", self.serverPort)
+        return server_dcs
+
+    def on_dcs_start(self):
+        log(LT.DEBUG, "Daemon Control Server Started at port", self.dcsPort)
         daemonInfo = {
             "active": True,
-            "port": self.serverPort,
+            "port": self.dcsPort,
         }
         if self.TYPE == PluginType.HOST:
             self.config.saveHostDaemon(daemonInfo)
         else:
             self.config.saveClientDaemon(daemonInfo)
 
-    def on_server_stop(self):
-        log(LT.DEBUG, "Control Server Stoped.")
+    def on_dcs_stop(self):
+        log(LT.DEBUG, "Daemon Control Server Stopped.")
         if self.TYPE == PluginType.HOST:
             self.config.saveHostDaemon(None)
         else:
             self.config.saveClientDaemon(None)
+
+    #
+    # Server Request Handlers
+    #
 
     async def handle_checkhealth(self, request: Request):
         return ResponseData(success=True, datatype = ResponseType.HEALTH, data={
            "status": "OK", 
         })
 
-    async def handle_daemonmethod(self, request: DaemonMethodRequest):
+    async def handle_daemonmethod(self, request: MethodRequest):
         if request.plugin is not None:
             if request.plugin in self.plugins:
                 return self.plugins[request.plugin].handle_request(request)
@@ -265,8 +273,17 @@ class CPDaemon:
         self.config = CPConfig()
         self.start_plugins()
 
-        # Blocking, Should be called at very end of start()
-        self.start_server()
+        server_dcs = self.get_dcs()
+        
+        if self.TYPE == PluginType.HOST:
+            server_dcs.run()
+        
+        elif self.TYPE == PluginType.CLIENT:
+            server_dcs.run()
+        
+        else:
+            log(LT.EXIT, "Type is DISABLED. No server started.")
+            return
 
     @daemon_method
     def stop(self):

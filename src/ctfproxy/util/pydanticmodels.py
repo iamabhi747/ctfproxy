@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-class DaemonMethodRequest (BaseModel):
+class MethodRequest (BaseModel):
     plugin: str | None = None
     method: str
     kwargs: dict[str, Any]

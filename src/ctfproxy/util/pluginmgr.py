@@ -6,7 +6,7 @@ import requests
 from fastapi import HTTPException
 from argparse import _SubParsersAction, ArgumentParser
 
-from .pydanticmodels import ResponseData, ResponseType, DaemonMethodRequest, ErrorResponse, ErrorType
+from .pydanticmodels import ResponseData, ResponseType, MethodRequest, ErrorResponse, ErrorType
 
 class PluginType (Enum):
     CLIENT = auto()
@@ -30,7 +30,7 @@ def daemon_method(func):
             allkwargs = sig.bind(self, *args, **kwargs).arguments
             allkwargs.pop("self", None)
 
-            return self.request_daemon(DaemonMethodRequest(
+            return self.request_daemon(MethodRequest(
                 plugin= self.NAME,
                 method= func.__name__,
                 kwargs= allkwargs
@@ -66,7 +66,7 @@ class PluginManager:
     def __init__(self, isServer: bool):
         self.isInServer = isServer
 
-    def request_daemon(self, request: DaemonMethodRequest) -> dict:
+    def request_daemon(self, request: MethodRequest) -> dict:
         try:
             res = requests.post(
                 f"http://127.0.0.1:{self.serverDetails.get('port', 7477)}/api/daemonmethod",
@@ -90,7 +90,7 @@ class PluginManager:
                 raise
             raise ConnectionError(747, "Failed to connect.")
 
-    def handle_request(self, request: DaemonMethodRequest) -> ResponseData:
+    def handle_request(self, request: MethodRequest) -> ResponseData:
         attr = getattr(self, request.method, None)
         if attr:
             if getattr(attr, "_is_daemon_method", False):
