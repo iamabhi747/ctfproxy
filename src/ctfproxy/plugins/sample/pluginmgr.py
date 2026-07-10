@@ -1,10 +1,11 @@
 from urllib3 import util
+from typing import Any
 from pydantic import BaseModel
 from InquirerPy import inquirer
 from InquirerPy.validator import NumberValidator
 from argparse import ArgumentParser, _SubParsersAction
 
-from ...util.pluginmgr import PluginType, PluginManager, server_method
+from ...util.pluginmgr import PluginType, ClientPluginHandler, server_method
 from ...util.log import log, LT, console
 
 class SampleConfig (BaseModel):
@@ -13,10 +14,9 @@ class SampleConfig (BaseModel):
     salary: int = 0
     company: str = ""
 
-class SamplePluginManager (PluginManager):
+class SamplePluginManager (ClientPluginHandler):
     NAME = "SamplePluginManager"
     SHORTNAME = "sample"
-    TYPE = PluginType.CLIENT_HOST
 
     userConfig: SampleConfig = SampleConfig()
     _userConfigType = SampleConfig
@@ -32,7 +32,7 @@ class SamplePluginManager (PluginManager):
         return self.userConfig.name
 
 
-    def clientcli(self, args: dict):
+    def cli(self, args: dict):
         subcmd = args.subcmd
         if subcmd == "t1":
             arr = self.t1()
@@ -46,14 +46,14 @@ class SamplePluginManager (PluginManager):
             log(LT.WARN, f"Invalid/Not Implimented Sub-command in sample. ({subcmd})")
             return
 
-    def clientcli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
+    def cli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
         sample_p = cmd_subp.add_parser("sample", help="Sample command for testing.")
         sample_p.set_defaults(plugin=self.NAME)
 
         sample_p.add_argument("subcmd", help="Sample subtest.", choices=["t1", "t2"])
         sample_p.add_argument("--opt1", "-a", help="Sample Option 1 / a", action="store_true")
 
-    def clientconfig_init(self, config: dict[str, dict[str, Any]]):
+    def config_init(self, config: dict[str, dict[str, Any]]):
         sampleConfig = SampleConfig.model_validate(config.get(self.NAME, dict()))
 
         console.print("[cyan bold underline]( Sample Config )[/]")

@@ -26,7 +26,7 @@ def handle_cli(ct: PluginType):
     plugin_subp = plugin_p.add_subparsers(dest="plugincmd", required=True)
 
     # Filters & returns in topological order
-    filteredPlugins = filterPlugins(ALL_PLUGINS, {ct, PluginType.CLIENT_HOST}, isServer=False)
+    filteredPlugins = filterPlugins(ALL_PLUGINS, {ct}, isServer=False)
 
     doneSet = set() 
     for _, plugin in filteredPlugins.items():
@@ -34,10 +34,7 @@ def handle_cli(ct: PluginType):
             plugin._CLS = InitState.DEPEND_FAILED
         elif plugin._CLS == InitState.NOT_STARTED:
             try:
-                if ct == PluginType.HOST:
-                    plugin.hostcli_init(cmd_subp, plugin_subp)
-                else:
-                    plugin.clientcli_init(cmd_subp, plugin_subp)
+                plugin.cli_init(cmd_subp, plugin_subp)
                 plugin._CLS = InitState.DONE
                 doneSet.add(plugin.NAME)
             except Exception as e:
@@ -65,10 +62,7 @@ def handle_cli(ct: PluginType):
                 plugin._COS = InitState.DEPEND_FAILED
             elif plugin._COS == InitState.NOT_STARTED:
                 try:
-                    if ct == PluginType.HOST:
-                        plugin.hostconfig_init(config)
-                    else:
-                        plugin.clientconfig_init(config)
+                    plugin.config_init(config)
                     plugin._COS = InitState.DONE
                     doneSet.add(plugin.NAME)
                 except Exception as e:
@@ -107,13 +101,11 @@ def handle_cli(ct: PluginType):
 
             plugin = filteredPlugins[args.plugin]
             if plugin._IS == InitState.DONE:
-                if ct == PluginType.HOST:
-                    plugin.hostcli(args)
-                else:
-                    plugin.clientcli(args)
+                plugin.cli(args)
 
             else:
-                log(LT.EXIT, f"Failed to init requested plugin ({plugin.NAME}), reason: {"Dependency Failed to init." if plugin._IS == InitState.DEPEND_FAILED else f"Error: {plugin.error}"}")
+                reason = "Dependency Failed to init." if plugin._IS == InitState.DEPEND_FAILED else f"Error: {plugin.error}"
+                log(LT.EXIT, f"Failed to init requested plugin ({plugin.NAME}), reason: {reason}")
                 return
 
         except Exception as e:

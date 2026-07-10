@@ -96,7 +96,7 @@ class CPDaemon:
             # log(LT.DEBUG, "Daemon Info: ", sock)
             if  sock is not None and sock.get("active", False):
                 try:
-                    res = requests.get(f"http://127.0.0.1:{sock.get("port", 7477)}/api/checkhealth", timeout=0.2)
+                    res = requests.get(f"http://127.0.0.1:{sock.get('port', 7477)}/api/checkhealth", timeout=0.2)
                     if res.status_code == 200 and res.json().get("success", False):
                         # log(LT.DEBUG, "Daemon is Active!")
                         return True
@@ -234,7 +234,7 @@ class CPDaemon:
         self.TYPE = type
 
     def start_plugins(self):
-        self.plugins = filterPlugins(ALL_PLUGINS, [self.TYPE, PluginType.CLIENT_HOST], isServer=True)
+        self.plugins = filterPlugins(ALL_PLUGINS, {self.TYPE}, isServer=True)
 
         if self.TYPE == PluginType.HOST:
             userConfig = self.config.getHostConfig()

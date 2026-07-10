@@ -3,6 +3,7 @@ from enum import Enum, auto
 from typing import Any
 
 import requests
+from fastapi import HTTPException
 from argparse import _SubParsersAction, ArgumentParser
 
 from .pydanticmodels import ResponseData, ResponseType, ServerMethodRequest, ErrorResponse, ErrorType
@@ -10,7 +11,6 @@ from .pydanticmodels import ResponseData, ResponseType, ServerMethodRequest, Err
 class PluginType (Enum):
     CLIENT = auto()
     HOST = auto()
-    CLIENT_HOST = auto()
     DISABLED = auto()
 
 class InitState (Enum):
@@ -44,7 +44,7 @@ class PluginManager:
     SHORTNAME = "NAN"
     TYPE = PluginType.DISABLED
     PRIORITY = 100
-    DD : dict[PluginManager] = dict()
+    DD: dict[str, "PluginManager"] = dict()
     dependencies: set[str] = set()
 
     _IS : InitState = InitState.NOT_STARTED # General Init State
@@ -68,11 +68,11 @@ class PluginManager:
 
     def request_server(self, request: ServerMethodRequest) -> dict:
         try:
-            res = requests.post(f"http://127.0.0.1:{self.serverDetails.get("port", 7477)}/api/servermethod",
-            data = request.model_dump_json(),
-            headers = {
-                "Content-Type": "application/json"
-            })
+            res = requests.post(
+                f"http://127.0.0.1:{self.serverDetails.get('port', 7477)}/api/servermethod",
+                data=request.model_dump_json(),
+                headers={"Content-Type": "application/json"},
+            )
 
             if res.status_code == 200:
                 rd = ResponseData.model_validate(res.json())
@@ -85,7 +85,9 @@ class PluginManager:
                     raise AttributeError("Invalid request, values do not follow schema. " + rd.errmessage)
                 else:
                     raise RuntimeError("Failed to execute method. " + rd.errmessage)
-        except:
+        except Exception as e:
+            if isinstance(e, ConnectionError):
+                raise
             raise ConnectionError(747, "Failed to connect.")
 
     def handle_request(self, request: ServerMethodRequest) -> ResponseData:
@@ -118,22 +120,13 @@ class PluginManager:
             else:
                 self.userConfig = daemonRef.get("userConfig", {})
 
-    def hostcli(self, args: dict):
+    def cli(self, args: dict):
         pass
 
-    def hostcli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
+    def cli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
         pass
 
-    def hostconfig_init(self, config: dict[str, dict[str, Any]]):
-        pass
-
-    def clientcli(self, args: dict):
-        pass
-
-    def clientcli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
-        pass
-
-    def clientconfig_init(self, config: dict[str, dict[str, Any]]):
+    def config_init(self, config: dict[str, dict[str, Any]]):
         pass
 
     #
@@ -159,5 +152,13 @@ class PluginManager:
     @server_method
     def disconnect(self):
         pass
+
+
+class ClientPluginHandler(PluginManager):
+    TYPE = PluginType.CLIENT
+
+
+class HostPluginHandler(PluginManager):
+    TYPE = PluginType.HOST
 
 
