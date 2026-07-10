@@ -1,11 +1,16 @@
 import argparse
+import logging
+import sys
 
 from .plugins import PluginType, InitState, ALL_PLUGINS, filterPlugins 
 from .daemon import CPDaemon
-from .util.log import log, LT
+from .util.log import initLogging
 from .util.config import CPConfig
 
+logger = logging.getLogger(__name__)
+
 def handle_cli(ct: PluginType):
+    initLogging(level=logging.DEBUG)
     if ct not in [PluginType.CLIENT, PluginType.HOST]:
         return
 
@@ -38,7 +43,7 @@ def handle_cli(ct: PluginType):
                 plugin._CLS = InitState.DONE
                 doneSet.add(plugin.NAME)
             except Exception as e:
-                log(LT.DEBUG, f"Error in {plugin.NAME}:CLiint => {e}")
+                logger.debug("Error in %s:CLIinit", plugin.NAME, exc_info=e)
                 plugin._CLS = InitState.FAILED
             except KeyboardInterrupt:
                 exit(1)
@@ -66,7 +71,7 @@ def handle_cli(ct: PluginType):
                     plugin._COS = InitState.DONE
                     doneSet.add(plugin.NAME)
                 except Exception as e:
-                    log(LT.DEBUG, f"Error in {plugin.NAME}:Configint => {e}")
+                    logger.debug("Error in %s:ConfigInit", plugin.NAME, exc_info=e)
                     plugin._COS = InitState.FAILED
                 except KeyboardInterrupt:
                     exit(1)
@@ -75,13 +80,13 @@ def handle_cli(ct: PluginType):
             cfg.saveHostConfig(config)
         else:
             cfg.saveClientConfig(config)
-        log(LT.SUCCESS, "Config Saved.")
+        logger.success("Config Saved.")
         return
 
     else:
         if args.plugin not in filteredPlugins:
-            log(LT.EXIT, f"Something Went Wrong! Tried to call invalid plugin. ({args.plugin})")
-            return
+            logger.critical("Something Went Wrong! Tried to call invalid plugin. (%s)", args.plugin)
+            sys.exit(1)
         try:
             doneSet = set() 
             for _, plugin in filteredPlugins.items():
@@ -105,9 +110,9 @@ def handle_cli(ct: PluginType):
 
             else:
                 reason = "Dependency Failed to init." if plugin._IS == InitState.DEPEND_FAILED else f"Error: {plugin.error}"
-                log(LT.EXIT, f"Failed to init requested plugin ({plugin.NAME}), reason: {reason}")
-                return
+                logger.critical("Failed to init requested plugin (%s), reason: %s", plugin.NAME, reason)
+                sys.exit(1)
 
         except Exception as e:
-            log(LT.EXIT, f"Something Went Wrong! Plugin raised error while handling requuest. ({e})")
-        return
+            logger.critical("Something Went Wrong! Plugin raised error while handling requuest.", exc_info=e)
+            sys.exit(1)

@@ -2,6 +2,7 @@ import sys
 import time
 import json
 import subprocess
+import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -14,8 +15,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .plugins import ALL_PLUGINS, PluginType, InitState, PluginManager,  filterPlugins
 from .util.pydanticmodels import *
 from .util.config import CPConfig
-from .util.log import LT, log
+from .util.log import initLogging
 from .util.getfreeport import getFreePort
+
+logger = logging.getLogger(__name__)
 
 class CPDaemon:
     TYPE = PluginType.DISABLED
@@ -33,7 +36,7 @@ class CPDaemon:
     @staticmethod
     def ensure(type: PluginType):
         if type not in [PluginType.HOST, PluginType.CLIENT]:
-            log(LT.WARN, "Invalid Daemon type, only HOST & ClIENT allowed.")
+            logger.warning("Invalid Daemon type, only HOST & ClIENT allowed.")
             return
 
         if not CPDaemon.isActive(type):
@@ -47,7 +50,7 @@ class CPDaemon:
         else: return
 
         if CPDaemon.isActive(type):
-            log(LT.INFO, "CPDaemon is already running.")
+            logger.info("CPDaemon is already running.")
             return True
 
         try:
@@ -66,16 +69,16 @@ class CPDaemon:
                 kwargs["cwd"] = "/"
 
             process = subprocess.Popen(cmd, **kwargs)
-            log(LT.DEBUG, "Daemon Process ID: ", process.pid)
+            logger.debug("Daemon Process ID: %s", process.pid)
         except Exception as e:
-            log(LT.ERROR, f"Failed to launch CPDaemon. ({e.__class__.__name__})")
+            logger.error("Failed to launch CPDaemon.", exc_info=e)
             return False
 
         status = CPDaemon.isActive(type, True)
         if status:
-            log(LT.INFO, f"{tname} daemon is started.")
+            logger.info("%s daemon is started.", tname)
         else:
-            log(LT.ERROR, f"{tname} daemon failed to start!")
+            logger.error("%s daemon failed to start!", tname)
         return status
 
     @staticmethod
@@ -88,20 +91,20 @@ class CPDaemon:
         elif type == PluginType.CLIENT:
             getSockFunc = cfg.getClientDaemon
         else:
-            log(LT.WARN, "Invalid Daemon type, only HOST & ClIENT allowed.")
+            logger.warning("Invalid Daemon type, only HOST & ClIENT allowed.")
             return False
 
         while tries > 0:
             sock = getSockFunc()
-            # log(LT.DEBUG, "Daemon Info: ", sock)
+            # logger.debug("Daemon Info: %s", sock)
             if  sock is not None and sock.get("active", False):
                 try:
                     res = requests.get(f"http://127.0.0.1:{sock.get('port', 7477)}/api/checkhealth", timeout=0.2)
                     if res.status_code == 200 and res.json().get("success", False):
-                        # log(LT.DEBUG, "Daemon is Active!")
+                        # logger.debug("Daemon is Active!")
                         return True
                 except Exception as e:
-                    log(LT.DEBUG, "Got error: ", e)
+                    logger.debug("Got error:", exc_info=e)
                     if not waitTillActive: 
                         return False
 
@@ -153,7 +156,7 @@ class CPDaemon:
         return server_dcs
 
     def on_dcs_start(self):
-        log(LT.DEBUG, "Daemon Control Server Started at port", self.dcsPort)
+        logger.debug("Daemon Control Server Started at port %s", self.dcsPort)
         daemonInfo = {
             "active": True,
             "port": self.dcsPort,
@@ -164,7 +167,7 @@ class CPDaemon:
             self.config.saveClientDaemon(daemonInfo)
 
     def on_dcs_stop(self):
-        log(LT.DEBUG, "Daemon Control Server Stopped.")
+        logger.debug("Daemon Control Server Stopped.")
         if self.TYPE == PluginType.HOST:
             self.config.saveHostDaemon(None)
         else:
@@ -245,10 +248,10 @@ class CPDaemon:
 
         if self.TYPE == PluginType.HOST:
             userConfig = self.config.getHostConfig()
-            serverConfig = self.config.getDefaultServerConfig()
+            serverConfig = {}
         else:
             userConfig = self.config.getClientConfig()
-            serverConfig = {}
+            serverConfig = self.config.getDefaultServerConfig()
 
         doneSet = set()
         for _, plugin in self.plugins.items():
@@ -263,6 +266,7 @@ class CPDaemon:
                         "serverConfig": serverConfig.get(plugin.NAME, {}),
                         "userConfig": userConfig.get(plugin.NAME, {})
                     })
+                    plugin.connect()
                     plugin._IS = InitState.DONE
                     doneSet.add(plugin.NAME)
                 except Exception as e:
@@ -282,8 +286,8 @@ class CPDaemon:
             server_dcs.run()
         
         else:
-            log(LT.EXIT, "Type is DISABLED. No server started.")
-            return
+            logger.critical("Type is DISABLED. No server started.")
+            sys.exit(1)
 
     @daemon_method
     def stop(self):
@@ -291,6 +295,8 @@ class CPDaemon:
 
 if __name__ == '__main__':
     import sys
+    from ctfproxy.util.log import initLogging
+    initLogging(level=logging.DEBUG)
 
     if len(sys.argv) != 2 or sys.argv[1] not in ["host", "client"]:
         print("CPDaemon requires type to be specified as argument. (host / client)")

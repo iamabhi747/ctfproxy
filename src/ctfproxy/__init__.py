@@ -1,4 +1,4 @@
-from .util.log import LT, console, log
+from .util.log import console, initLogging
 from .util.pluginmgr import (
 	ClientPluginHandler,
 	HostPluginHandler,
@@ -12,10 +12,9 @@ __all__ = [
 	"ClientPluginHandler",
 	"HostPluginHandler",
 	"InitState",
-	"LT",
 	"PluginManager",
 	"PluginType",
 	"console",
 	"daemon_method",
-	"log",
+	"initLogging",
 ]

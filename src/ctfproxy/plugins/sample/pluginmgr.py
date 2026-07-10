@@ -5,7 +5,10 @@ from InquirerPy import inquirer
 from InquirerPy.validator import NumberValidator
 from argparse import ArgumentParser, _SubParsersAction
 
-from ctfproxy import ClientPluginHandler, LT, console, daemon_method, log
+import logging
+from ctfproxy import ClientPluginHandler, console, daemon_method
+
+logger = logging.getLogger(__name__)
 
 class SampleConfig (BaseModel):
     isDefined: bool = False
@@ -22,12 +25,12 @@ class SamplePluginManager (ClientPluginHandler):
 
     @daemon_method
     def t1(self):
-        log(LT.DEBUG, "Server Method t1 called.")
+        logger.debug("Server Method t1 called.")
         return [10, 9, 10]
 
     @daemon_method
     def t2(self) -> str:
-        log(LT.DEBUG, f"Sending name in config. ({self.userConfig.name})")
+        logger.debug("Sending name in config. (%s)", self.userConfig.name)
         return self.userConfig.name
 
 
@@ -35,14 +38,14 @@ class SamplePluginManager (ClientPluginHandler):
         subcmd = args.subcmd
         if subcmd == "t1":
             arr = self.t1()
-            log(LT.DEBUG, "Result of server method: ", arr)
+            logger.debug("Result of server method: %s", arr)
 
         elif subcmd == "t2":
             name = self.t2()
-            log(LT.DEBUG, "Got Name as:", name)
+            logger.debug("Got Name as: %s", name)
 
         else:
-            log(LT.WARN, f"Invalid/Not Implimented Sub-command in sample. ({subcmd})")
+            logger.warning("Invalid/Not Implimented Sub-command in sample. (%s)", subcmd)
             return
 
     def cli_init(self, cmd_subp: _SubParsersAction[ArgumentParser], plugin_subp: _SubParsersAction[ArgumentParser]):
