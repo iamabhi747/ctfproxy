@@ -136,7 +136,6 @@ class CPDaemon:
 
         self.router = APIRouter()
         self.router.add_api_route("/api/checkhealth", self.handle_checkhealth, methods=["GET"], response_model=ResponseData)
-        self.router.add_api_route("/api/servermethod", self.handle_servermethod, methods=["POST"], response_model=ResponseData)
         self.router.add_api_route("/api/daemonmethod", self.handle_daemonmethod, methods=["POST"], response_model=ResponseData)
 
         self.ipcapp = FastAPI(title="Control Server for CTFProxy Daemon", lifespan=server_lifespan)
@@ -172,13 +171,13 @@ class CPDaemon:
            "status": "OK", 
         })
 
-    async def handle_servermethod(self, request: ServerMethodRequest):
-        if request.plugin in self.plugins:
-            return self.plugins[request.plugin].handle_request(request)
-        else:
-            raise HTTPException(478, detail=f"Requested plugin does not exits. ({request.plugin})")
-
     async def handle_daemonmethod(self, request: DaemonMethodRequest):
+        if request.plugin is not None:
+            if request.plugin in self.plugins:
+                return self.plugins[request.plugin].handle_request(request)
+            else:
+                raise HTTPException(478, detail=f"Requested plugin does not exits. ({request.plugin})")
+
         attr = getattr(self, request.method, None)
         if attr:
             if getattr(attr, "_is_daemon_method", False):
