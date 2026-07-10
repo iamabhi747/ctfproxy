@@ -5,8 +5,7 @@ from InquirerPy import inquirer
 from InquirerPy.validator import NumberValidator
 from argparse import ArgumentParser, _SubParsersAction
 
-from ...util.pluginmgr import PluginType, ClientPluginHandler, daemon_method
-from ...util.log import log, LT, console
+from ctfproxy import ClientPluginHandler, LT, console, daemon_method, log
 
 class SampleConfig (BaseModel):
     isDefined: bool = False
