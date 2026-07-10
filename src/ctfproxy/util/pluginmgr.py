@@ -30,7 +30,7 @@ def daemon_method(func):
             allkwargs = sig.bind(self, *args, **kwargs).arguments
             allkwargs.pop("self", None)
 
-            return self.request_server(DaemonMethodRequest(
+            return self.request_daemon(DaemonMethodRequest(
                 plugin= self.NAME,
                 method= func.__name__,
                 kwargs= allkwargs
@@ -66,7 +66,7 @@ class PluginManager:
     def __init__(self, isServer: bool):
         self.isInServer = isServer
 
-    def request_server(self, request: DaemonMethodRequest) -> dict:
+    def request_daemon(self, request: DaemonMethodRequest) -> dict:
         try:
             res = requests.post(
                 f"http://127.0.0.1:{self.serverDetails.get('port', 7477)}/api/daemonmethod",
