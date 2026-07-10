@@ -20,7 +20,7 @@ class InitState (Enum):
     DEPEND_FAILED = auto()
 
 # Decorator
-def server_method(func):
+def daemon_method(func):
     def wrapper(self, *args, **kwargs):
         if self.isInServer:
             return func(self, *args, **kwargs)
@@ -36,7 +36,7 @@ def server_method(func):
                 kwargs= allkwargs
             ))
 
-    wrapper._is_server_method = True
+    wrapper._is_daemon_method = True
     return wrapper
 
 class PluginManager:
@@ -93,11 +93,11 @@ class PluginManager:
     def handle_request(self, request: ServerMethodRequest) -> ResponseData:
         attr = getattr(self, request.method, None)
         if attr:
-            if getattr(attr, "_is_server_method", False):
+            if getattr(attr, "_is_daemon_method", False):
                 result = attr(**request.kwargs)
                 return ResponseData(success=True, datatype=ResponseType.METHOD_OUTPUT, data = result)
             else:
-                raise HTTPException(477, detail=f"Requested method is not a server method. ({self.NAME}::{request.method})")
+                raise HTTPException(477, detail=f"Requested method is not a daemon method. ({self.NAME}::{request.method})")
         else:
             raise HTTPException(477, detail=f"Requested method does not exists. ({self.NAME}::{request.method})")
 
@@ -133,23 +133,23 @@ class PluginManager:
     # "Server" methods
     #
 
-    @server_method
+    @daemon_method
     def getStatus(self):
         pass
 
-    @server_method
+    @daemon_method
     def start(self):
         pass
 
-    @server_method
+    @daemon_method
     def stop(self):
         pass
 
-    @server_method
+    @daemon_method
     def connect(self):
         pass
 
-    @server_method
+    @daemon_method
     def disconnect(self):
         pass
 

@@ -5,7 +5,7 @@ from InquirerPy import inquirer
 from InquirerPy.validator import NumberValidator
 from argparse import ArgumentParser, _SubParsersAction
 
-from ...util.pluginmgr import PluginType, ClientPluginHandler, server_method
+from ...util.pluginmgr import PluginType, ClientPluginHandler, daemon_method
 from ...util.log import log, LT, console
 
 class SampleConfig (BaseModel):
@@ -21,12 +21,12 @@ class SamplePluginManager (ClientPluginHandler):
     userConfig: SampleConfig = SampleConfig()
     _userConfigType = SampleConfig
 
-    @server_method
+    @daemon_method
     def t1(self):
         log(LT.DEBUG, "Server Method t1 called.")
         return [10, 9, 10]
 
-    @server_method
+    @daemon_method
     def t2(self) -> str:
         log(LT.DEBUG, f"Sending name in config. ({self.userConfig.name})")
         return self.userConfig.name
